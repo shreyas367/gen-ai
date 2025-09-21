@@ -1,19 +1,23 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import twilio from "twilio";
 import dbConnect from "@/lib/db";
-import Otp from "@/lib/models/otp"; // <-- create a separate collection for OTP storage
+import Otp from "@/lib/models/otp"; // OTP collection
 
 const client = twilio(
   process.env.TWILIO_ACCOUNT_SID!,
-  process.env.TWILIO_AUTH_TOKEN!,
+  process.env.TWILIO_AUTH_TOKEN!
 );
 
-export async function POST(req: Request) {
+interface OtpRequestBody {
+  mobile: string;
+}
+
+export async function POST(req: NextRequest) {
   try {
     await dbConnect();
 
-    const { mobile } = await req.json();
-    const trimmedMobile = mobile?.trim();
+    const body: OtpRequestBody = await req.json();
+    const trimmedMobile = body.mobile?.trim();
 
     // 1. Validate mobile
     if (!trimmedMobile) {
@@ -32,10 +36,9 @@ export async function POST(req: Request) {
 
     // 2. Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
     console.log(`Generated OTP for ${trimmedMobile}: ${otp}`);
 
-    // 3. Store OTP in separate collection (not in User table)
+    // 3. Store OTP in collection
     await Otp.findOneAndUpdate(
       { mobile: trimmedMobile },
       { otp, otpGeneratedAt: new Date() },
@@ -53,10 +56,13 @@ export async function POST(req: Request) {
       success: true,
       message: "OTP sent successfully",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error sending OTP:", error);
     return NextResponse.json(
-      { error: "Failed to send OTP", details: error.message },
+      {
+        error: "Failed to send OTP",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
       { status: 500 }
     );
   }
