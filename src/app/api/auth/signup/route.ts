@@ -1,13 +1,22 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import dbConnect from "@/lib/db";
 import User from "@/lib/models/User";
 
-export async function POST(req: Request) {
+interface SignupRequestBody {
+  name: string;
+  email: string;
+  mobile: string;
+  password: string;
+  role: string;
+}
+
+export async function POST(req: NextRequest) {
   try {
-    // ✅ Connect to database
+    // Connect to DB
     await dbConnect();
 
-    const { name, email, mobile, password, role } = await req.json();
+    const body: SignupRequestBody = await req.json();
+    const { name, email, mobile, password, role } = body;
 
     // 1. Validate required fields
     if (!name || !email || !mobile || !password || !role) {
@@ -26,15 +35,14 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3. Create new user with raw password
-    //    (Password will be hashed automatically by the pre-save hook in schema)
+    // 3. Create new user
     const newUser = await User.create({
       name,
       email,
       mobile,
       password,
       role,
-      isVerified: true, // ✅ automatically mark as verified for now
+      isVerified: true, // mark verified for now
     });
 
     // 4. Return success response
@@ -50,10 +58,13 @@ export async function POST(req: Request) {
         isVerified: newUser.isVerified,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Signup error:", error);
     return NextResponse.json(
-      { error: "Signup failed" },
+      {
+        error: "Signup failed",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
       { status: 500 }
     );
   }

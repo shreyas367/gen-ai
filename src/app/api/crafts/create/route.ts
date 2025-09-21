@@ -5,9 +5,24 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
+interface MarketingSuggestionRequestBody {
+  artisanId: string;
+  imageUrl: string;
+  userTitle?: string;
+  userDescription?: string;
+  lang?: string;
+}
+
+interface CraftData {
+  title: string;
+  description: string;
+  price: number;
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { artisanId, imageUrl, userTitle, userDescription, lang = "en" } = await req.json();
+    const body: MarketingSuggestionRequestBody = await req.json();
+    const { artisanId, imageUrl, userTitle, userDescription, lang = "en" } = body;
 
     if (!artisanId || !imageUrl) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -27,48 +42,48 @@ No extra text, no explanations.
       contents: prompt,
     });
 
-    // Safely extract text from candidate
-    let rawText: string = "";
-
-    const firstCandidate = response.candidates?.[0];
+    // Safely extract text from first candidate
+    let rawText = "";
+    const firstCandidate: Candidate | undefined = response.candidates?.[0];
     if (firstCandidate?.content) {
       const content = firstCandidate.content;
-
       if (Array.isArray(content)) {
-        // content is array of objects
         const textItem = content.find((c) => typeof c.text === "string");
         if (textItem) rawText = textItem.text;
       } else if ("text" in content && typeof content.text === "string") {
         rawText = content.text;
       }
     }
-
     rawText = rawText.trim();
 
     // Fallback craft data
-    let craftData = {
+    const craftData: CraftData = {
       title: userTitle || "Warli Handpainted Pots",
       description: userDescription || "These pots are small with height 2-3 inch.Handmade and Handpainted by Indian craftsmen",
       price: 249,
     };
 
+    // Try parsing AI response
     try {
       const jsonMatch = rawText.match(/\{.*\}/s);
       if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
+        const parsed: Partial<CraftData> = JSON.parse(jsonMatch[0]);
         craftData.title = parsed.title || craftData.title;
         craftData.description = parsed.description || craftData.description;
         craftData.price = parsed.price || craftData.price;
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.warn("Failed to parse AI JSON response, using fallback", err);
     }
 
     if (userTitle) craftData.title = userTitle;
 
     return NextResponse.json({ craft: craftData });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(err);
-    return NextResponse.json({ error: err.message || "Something went wrong" }, { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Something went wrong" },
+      { status: 500 }
+    );
   }
 }

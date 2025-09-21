@@ -5,9 +5,14 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
+interface RecommendationsRequestBody {
+  userId: string;
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { userId } = await req.json();
+    const body: RecommendationsRequestBody = await req.json();
+    const { userId } = body;
 
     if (!userId) {
       return NextResponse.json({ error: "Missing userId" }, { status: 400 });
@@ -23,16 +28,22 @@ export async function POST(req: NextRequest) {
       contents: prompt,
     });
 
-    let recommendations;
+    let recommendations: string[] = [];
     try {
-      recommendations = response.text ? JSON.parse(response.text) : [];
-    } catch {
+      if (response.text && typeof response.text === "string") {
+        recommendations = JSON.parse(response.text);
+      }
+    } catch (parseError: unknown) {
+      console.warn("Failed to parse AI recommendations, returning empty array", parseError);
       recommendations = [];
     }
 
     return NextResponse.json({ recommendations });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(err);
-    return NextResponse.json({ error: err.message || "Something went wrong" }, { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Something went wrong" },
+      { status: 500 }
+    );
   }
 }
