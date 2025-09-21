@@ -4,9 +4,25 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2, Plus, Minus, ShoppingBag, Home } from "lucide-react";
 
+interface Product {
+  _id: string;
+  title: string;
+  price: number;
+}
+
+interface CartItem {
+  _id: string;
+  productId: Product;
+  quantity: number;
+}
+
+interface CartResponse {
+  items: CartItem[];
+}
+
 export default function CartPage() {
   const router = useRouter();
-  const [cart, setCart] = useState<any[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [homeClicked, setHomeClicked] = useState(false);
 
@@ -17,39 +33,46 @@ export default function CartPage() {
     if (!buyerId) return;
     fetch(`/api/cart?buyerId=${buyerId}`)
       .then((res) => res.json())
-      .then((data) => {
+      .then((data: CartResponse) => {
         setCart(data.items || []);
         setLoading(false);
-      });
+      })
+      .catch(() => setLoading(false));
   }, [buyerId]);
 
-const updateQuantity = async (productId: string, type: "inc" | "dec") => {
-  // Update state optimistically
-  setCart((prev) =>
-    prev.map((item) =>
-      item.productId._id === productId
-        ? { ...item, quantity: type === "inc" ? item.quantity + 1 : Math.max(item.quantity - 1, 1) }
-        : item
-    )
-  );
+  const updateQuantity = async (productId: string, type: "inc" | "dec") => {
+    setCart((prev) =>
+      prev.map((item) =>
+        item.productId._id === productId
+          ? { ...item, quantity: type === "inc" ? item.quantity + 1 : Math.max(item.quantity - 1, 1) }
+          : item
+      )
+    );
 
-  if (!buyerId) return;
-  await fetch("/api/cart", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ buyerId, productId, type }), // ✅ use productId
-  });
-};
-
-
-  const removeItem = async (craftId: string) => {
     if (!buyerId) return;
-    await fetch("/api/cart", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ buyerId, productId: craftId }),
-    });
-    setCart(cart.filter((item) => item.productId._id !== craftId));
+    try {
+      await fetch("/api/cart", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ buyerId, productId, type }),
+      });
+    } catch (err) {
+      console.error("Failed to update quantity:", err);
+    }
+  };
+
+  const removeItem = async (productId: string) => {
+    if (!buyerId) return;
+    try {
+      await fetch("/api/cart", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ buyerId, productId }),
+      });
+      setCart((prev) => prev.filter((item) => item.productId._id !== productId));
+    } catch (err) {
+      console.error("Failed to remove item:", err);
+    }
   };
 
   const total = cart.reduce(
@@ -79,7 +102,7 @@ const updateQuantity = async (productId: string, type: "inc" | "dec") => {
         </button>
       </div>
 
-      {/* Heading with logo and animated gradient */}
+      {/* Heading */}
       <h1
         className="text-5xl md:text-6xl mb-8 flex items-center gap-3 gradient-text"
         style={{ fontFamily: "Georgia, serif", fontStyle: "italic", fontWeight: "bold" }}
@@ -146,19 +169,11 @@ const updateQuantity = async (productId: string, type: "inc" | "dec") => {
           background-size: 400% 400%;
           animation: gradientBG 15s ease infinite;
         }
-
         @keyframes gradientBG {
-          0% {
-            background-position: 0% 50%;
-          }
-          50% {
-            background-position: 100% 50%;
-          }
-          100% {
-            background-position: 0% 50%;
-          }
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
         }
-
         .gradient-text {
           background: linear-gradient(90deg, black);
           background-size: 300% 300%;
@@ -166,17 +181,10 @@ const updateQuantity = async (productId: string, type: "inc" | "dec") => {
           -webkit-text-fill-color: transparent;
           animation: textGradient 5s ease infinite;
         }
-
         @keyframes textGradient {
-          0% {
-            background-position: 0% 50%;
-          }
-          50% {
-            background-position: 100% 50%;
-          }
-          100% {
-            background-position: 0% 50%;
-          }
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
         }
       `}</style>
     </div>

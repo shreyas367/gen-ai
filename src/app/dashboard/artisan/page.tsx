@@ -17,6 +17,16 @@ interface MarketingData {
   suggestions?: string[];
 }
 
+interface CreateCraftResponse {
+  success: boolean;
+  craft: Craft;
+  error?: string;
+}
+
+interface MarketingResponse {
+  suggestions?: string[];
+}
+
 export default function ArtisanDashboard() {
   const [file, setFile] = useState<File | null>(null);
   const [imageUrl, setImageUrl] = useState(""); 
@@ -36,7 +46,7 @@ export default function ArtisanDashboard() {
   useEffect(() => {
     fetch("/api/crafts")
       .then((res) => res.json())
-      .then((data) => setUploads(data.crafts || []));
+      .then((data: { crafts: Craft[] }) => setUploads(data.crafts || []));
   }, []);
 
   useEffect(() => {
@@ -67,7 +77,7 @@ export default function ArtisanDashboard() {
         method: "POST",
         body: formData,
       });
-      const cloudData = await cloudRes.json();
+      const cloudData: { secure_url: string; error?: { message: string } } = await cloudRes.json();
       if (!cloudRes.ok) throw new Error(cloudData.error?.message || "Image upload failed");
       setImageUrl(cloudData.secure_url);
 
@@ -82,17 +92,12 @@ export default function ArtisanDashboard() {
         }),
       });
 
-      if (!craftRes.ok) {
-        const text = await craftRes.text();
-        throw new Error(`AI API error: ${text}`);
-      }
-
-      const craftData = await craftRes.json();
+      const craftData: CreateCraftResponse = await craftRes.json();
       if (!craftData.craft) throw new Error("AI generation failed");
 
       if (!title) setTitle(craftData.craft.title);
-      setDescription(craftData.craft.description);
-      setPrice(craftData.craft.price);
+      setDescription(craftData.craft.description || "");
+      setPrice(craftData.craft.price.toString());
 
       try {
         const marketingRes = await fetch("/api/crafts/marketing-suggestions", {
@@ -107,16 +112,17 @@ export default function ArtisanDashboard() {
         let marketingData: MarketingData | null = null;
 
         if (marketingRes.ok) {
-          marketingData = await marketingRes.json();
+          marketingData = await marketingRes.json() as MarketingResponse;
         }
 
         setMarketing(marketingData ?? null);
         setToast("AI suggestions generated! You can edit before uploading.");
-      } catch (err) {
+      } catch (err: unknown) {
         setToast("Marketing AI generation failed");
       }
-    } catch (err: any) {
-      setToast(err.message || "AI generation failed");
+    } catch (err: unknown) {
+      if (err instanceof Error) setToast(err.message);
+      else setToast("AI generation failed");
     } finally {
       setLoadingAI(false);
     }
@@ -152,7 +158,7 @@ export default function ArtisanDashboard() {
       formData.append("upload_preset", UPLOAD_PRESET);
 
       const res = await fetch(CLOUDINARY_URL, { method: "POST", body: formData });
-      const data = await res.json();
+      const data: { secure_url: string; error?: { message: string } } = await res.json();
       if (!res.ok) throw new Error(data.error?.message || "Upload failed");
 
       const saveRes = await fetch("/api/crafts", {
@@ -167,7 +173,7 @@ export default function ArtisanDashboard() {
         }),
       });
 
-      const saveData = await saveRes.json();
+      const saveData: CreateCraftResponse = await saveRes.json();
       if (!saveData.success) throw new Error(saveData.error || "Failed to save craft");
 
       setUploads((prev) => [saveData.craft, ...prev]);
@@ -176,8 +182,9 @@ export default function ArtisanDashboard() {
       setDescription("");
       setPrice("");
       setToast("Craft uploaded successfully!");
-    } catch (err: any) {
-      setToast(`Upload failed: ${err.message}`);
+    } catch (err: unknown) {
+      if (err instanceof Error) setToast(`Upload failed: ${err.message}`);
+      else setToast("Upload failed");
     } finally {
       setLoadingUpload(false);
     }
@@ -197,7 +204,7 @@ export default function ArtisanDashboard() {
         body: JSON.stringify({ buyerId: artisanId }),
       });
 
-      const data = await res.json();
+      const data: { success: boolean; views?: number } = await res.json();
 
       if (data.success) {
         setUploads((prevUploads) =>
@@ -206,7 +213,7 @@ export default function ArtisanDashboard() {
           )
         );
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Error updating views:", err);
     }
   };

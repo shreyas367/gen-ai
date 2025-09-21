@@ -4,14 +4,34 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShoppingBag, Trash2, Home } from "lucide-react";
 
+interface Product {
+  _id: string;
+  title: string;
+  price: number;
+}
+
+interface CartItem {
+  _id: string;
+  productId: Product;
+  quantity: number;
+}
+
+interface DeliveryDetails {
+  name: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+}
+
 export default function CheckoutPage() {
   const router = useRouter();
-  const [cart, setCart] = useState<any[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
   const [homeClicked, setHomeClicked] = useState(false);
-
-  const [delivery, setDelivery] = useState({
+  const [delivery, setDelivery] = useState<DeliveryDetails>({
     name: "",
     phone: "",
     address: "",
@@ -20,40 +40,39 @@ export default function CheckoutPage() {
     pincode: "",
   });
 
-  const buyerId =
-    typeof window !== "undefined" ? localStorage.getItem("userId") : null;
+  const buyerId = typeof window !== "undefined" ? localStorage.getItem("userId") : null;
 
-  // Fetch cart items
-useEffect(() => {
-  if (!buyerId) return;
-  fetch(`/api/cart?buyerId=${buyerId}`)
-    .then((res) => res.json())
-    .then((data) => {
-      console.log("Cart API data:", data); // Should show actual quantities
-      setCart(data.items || []);
-      setLoading(false);
-    });
-}, [buyerId]);
-
+  useEffect(() => {
+    if (!buyerId) return;
+    fetch(`/api/cart?buyerId=${buyerId}`)
+      .then((res) => res.json())
+      .then((data: { items: CartItem[] }) => {
+        setCart(data.items || []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [buyerId]);
 
   const total = cart.reduce(
-    (sum, item) => sum + (item.quantity || 0) * (item.productId?.price || 0),
+    (sum, item) => sum + item.quantity * item.productId.price,
     0
   );
 
   const removeItem = async (productId: string) => {
     if (!buyerId) return;
-    await fetch("/api/cart", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ buyerId, productId }),
-    });
-    setCart(cart.filter((item) => item.productId._id !== productId));
+    try {
+      await fetch("/api/cart", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ buyerId, productId }),
+      });
+      setCart((prev) => prev.filter((item) => item.productId._id !== productId));
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setDelivery((prev) => ({ ...prev, [name]: value }));
   };
@@ -68,17 +87,13 @@ useEffect(() => {
     }
 
     setPlacingOrder(true);
-
     try {
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           buyerId,
-          items: cart.map((item) => ({
-            productId: item.productId._id,
-            quantity: item.quantity,
-          })),
+          items: cart.map((item) => ({ productId: item.productId._id, quantity: item.quantity })),
           total,
           delivery,
         }),
@@ -88,7 +103,6 @@ useEffect(() => {
 
       if (data.success) {
         alert("✅ Order placed successfully!");
-        // Clear cart
         await fetch("/api/cart/clear", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -100,19 +114,18 @@ useEffect(() => {
         alert(data.error || "Failed to place order.");
       }
     } catch (err) {
-      console.error("Order error:", err);
+      console.error(err);
       alert("Failed to place order.");
     } finally {
       setPlacingOrder(false);
     }
   };
 
-  if (loading)
-    return <p className="text-center mt-10 text-white">Loading cart...</p>;
+  if (loading) return <p className="text-center mt-10 text-white">Loading cart...</p>;
 
   return (
     <div className="w-screen h-screen overflow-hidden relative gradient-bg p-6 flex flex-col items-center">
-      {/* Home icon top-left */}
+      {/* Home icon */}
       <div className="absolute top-5 left-5">
         <button
           onClick={() => {
@@ -128,14 +141,10 @@ useEffect(() => {
         </button>
       </div>
 
-      {/* Checkout Heading */}
+      {/* Heading */}
       <h1
         className="text-5xl md:text-6xl mb-8 flex items-center gap-3 gradient-text"
-        style={{
-          fontFamily: "Georgia, serif",
-          fontStyle: "italic",
-          fontWeight: "bold",
-        }}
+        style={{ fontFamily: "Georgia, serif", fontStyle: "italic", fontWeight: "bold" }}
       >
         <ShoppingBag size={48} /> Checkout
       </h1>
@@ -154,7 +163,7 @@ useEffect(() => {
                     key={field}
                     type="text"
                     name={field}
-                    value={delivery[field as keyof typeof delivery]}
+                    value={delivery[field as keyof DeliveryDetails]}
                     onChange={handleInputChange}
                     placeholder={field.charAt(0).toUpperCase() + field.slice(1)}
                     className="border border-gray-300 p-2 rounded w-full hover:border-2 hover:border-black focus:border-2 focus:border-black focus:outline-none placeholder-black transition-all"
@@ -178,12 +187,11 @@ useEffect(() => {
                   className="flex items-center justify-between border p-3 rounded-lg shadow-sm bg-white text-black"
                 >
                   <div>
-                    <h2 className="font-semibold">{item.productId?.title}</h2>
-               <p>
-  ₹{item.productId?.price} × {item.quantity} = 
-  <span className="font-medium">₹{item.productId?.price * item.quantity}</span>
-</p>
-
+                    <h2 className="font-semibold">{item.productId.title}</h2>
+                    <p>
+                      ₹{item.productId.price} × {item.quantity} ={" "}
+                      <span className="font-medium">₹{item.productId.price * item.quantity}</span>
+                    </p>
                   </div>
                   <button
                     className="p-2 text-red-500"
@@ -220,15 +228,9 @@ useEffect(() => {
         }
 
         @keyframes gradientBG {
-          0% {
-            background-position: 0% 50%;
-          }
-          50% {
-            background-position: 100% 50%;
-          }
-          100% {
-            background-position: 0% 50%;
-          }
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
         }
 
         .gradient-text {
@@ -240,15 +242,9 @@ useEffect(() => {
         }
 
         @keyframes textGradient {
-          0% {
-            background-position: 0% 50%;
-          }
-          50% {
-            background-position: 100% 50%;
-          }
-          100% {
-            background-position: 0% 50%;
-          }
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
         }
       `}</style>
     </div>
