@@ -1,17 +1,17 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import dbConnect from "@/lib/db";
 import Craft from "@/lib/models/Craft";
 
-interface Params {
-  craftId: string;
+interface RouteParams {
+  params: { craftId: string };
 }
 
-export async function POST(req: Request, context: { params: Params }) {
+export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
     await dbConnect();
 
-    const { craftId } = context.params;
-    const { buyerId } = await req.json();
+    const { craftId } = params;
+    const { buyerId }: { buyerId: string } = await req.json();
 
     if (!buyerId) {
       return NextResponse.json(
@@ -20,23 +20,29 @@ export async function POST(req: Request, context: { params: Params }) {
       );
     }
 
-    // Increment views only if buyer hasn't viewed it yet and is not artisan
+    // Increment views only if buyer hasn't viewed it yet
     const updatedCraft = await Craft.findOneAndUpdate(
-      { _id: craftId, viewedBy: { $ne: buyerId } }, // buyerId not in viewedBy
+      { _id: craftId, viewedBy: { $ne: buyerId } },
       {
-        $inc: { views: 1 },          // increment views
-        $push: { viewedBy: buyerId } // add buyerId to viewedBy
+        $inc: { views: 1 },
+        $push: { viewedBy: buyerId }
       },
-      { new: true } // return updated document
+      { new: true }
     );
 
     if (!updatedCraft) {
-      return NextResponse.json({ success: false, error: "Craft not found or already viewed" }, { status: 404 });
+      return NextResponse.json(
+        { success: false, error: "Craft not found or already viewed" },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json({ success: true, views: updatedCraft.views });
-  } catch (err) {
+  } catch (err: unknown) {
     console.error("Error updating views:", err);
-    return NextResponse.json({ success: false, error: "Server error" }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: "Server error" },
+      { status: 500 }
+    );
   }
 }
