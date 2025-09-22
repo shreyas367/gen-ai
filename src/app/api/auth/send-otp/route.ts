@@ -34,33 +34,34 @@ export async function POST(req: Request) {
     const identifier = mobile?.trim() || email?.trim();
 
     if (!identifier) {
-      return NextResponse.json({ error: "Mobile or email is required" }, { status: 400 });
+      return NextResponse.json({ success: false, error: "Mobile or email is required" }, { status: 400 });
     }
 
     if (mobile && !/^\d{10}$/.test(mobile)) {
-      return NextResponse.json({ error: "Mobile must be 10 digits" }, { status: 400 });
+      return NextResponse.json({ success: false, error: "Mobile must be 10 digits" }, { status: 400 });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpGeneratedAt = new Date();
+    const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     console.log(`Generated OTP for ${identifier}: ${otp}`);
 
     // Store OTP in DB
     await Otp.findOneAndUpdate(
       { identifier },
-      { otp, otpGeneratedAt },
+      { otp, otpGeneratedAt, otpExpiresAt },
       { upsert: true, new: true }
     );
 
-    // Send via Twilio SMS if mobile
+    // Send via Twilio SMS
     let smsStatus = null;
     if (mobile) {
       try {
         await twilioClient.messages.create({
           body: `Your OTP is ${otp}`,
           from: TWILIO_PHONE_NUMBER,
-          to: `+91${mobile}`,
+          to: mobile.startsWith("+") ? mobile : `+91${mobile}`,
         });
         smsStatus = `OTP sent via SMS to ${mobile}`;
         console.log(smsStatus);
@@ -70,7 +71,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // Send via email if email exists
+    // Send via Email
     let emailStatus = null;
     if (email) {
       try {
@@ -90,12 +91,13 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: "OTP sent and stored in OTP collection",
+      message: "OTP generated and sent",
       smsStatus,
       emailStatus,
+      otpExpiresAt,
     });
   } catch (error: any) {
     console.error("Send OTP error:", error.message);
-    return NextResponse.json({ error: "Failed to send OTP", details: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: "Failed to send OTP", details: error.message }, { status: 500 });
   }
 }

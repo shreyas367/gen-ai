@@ -49,58 +49,53 @@ export default function Signup() {
   }, [timer]);
 
   // ========================= OTP HANDLERS =========================
-const sendOtp = async () => {
-  setShowOtpInfo(true);
-};
+  const sendOtp = async () => {
+    setShowOtpInfo(true);
+  };
 
-// Call this when user confirms OTP info modal
-const confirmOtpInfo = async () => {
-  setShowOtpInfo(false);
+  const confirmOtpInfo = async () => {
+    setShowOtpInfo(false);
 
-  // Validation
-  if (!form.mobile && !form.email) {
-    setFieldErrors({ mobile: "Please enter mobile or email" });
-    return;
-  }
-  if (form.mobile && !/^\d{10}$/.test(form.mobile)) {
-    setFieldErrors({ mobile: "Please enter a valid 10-digit mobile number" });
-    return;
-  }
-  if (form.email && !/\S+@\S+\.\S+/.test(form.email)) {
-    setFieldErrors({ email: "Please enter a valid email address" });
-    return;
-  }
-
-  setOtpLoading(true);
-  setError("");
-  setFieldErrors({});
-  setOtpVerified(false);
-
-  try {
-    const res = await fetch("/api/auth/send-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mobile: form.mobile, email: form.email }),
-    });
-
-    // Always parse JSON safely
-    const data = await res.text(); 
-    let jsonData;
-    try { jsonData = JSON.parse(data); } catch { jsonData = {}; }
-
-    if (res.ok) {
-      setOtpSent(true);
-      setTimer(60);
-    } else {
-      setError(jsonData.error || "Failed to send OTP");
+    // Validation
+    if (!form.mobile && !form.email) {
+      setFieldErrors({ mobile: "Please enter mobile or email" });
+      return;
     }
-  } catch (err: any) {
-    setError(err.message || "Something went wrong while sending OTP");
-  } finally {
-    setOtpLoading(false);
-  }
-};
+    if (form.mobile && !/^\d{10}$/.test(form.mobile)) {
+      setFieldErrors({ mobile: "Please enter a valid 10-digit mobile number" });
+      return;
+    }
+    if (form.email && !/\S+@\S+\.\S+/.test(form.email)) {
+      setFieldErrors({ email: "Please enter a valid email address" });
+      return;
+    }
 
+    setOtpLoading(true);
+    setError("");
+    setFieldErrors({});
+    setOtpVerified(false);
+
+    try {
+      const res = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mobile: form.mobile, email: form.email }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setOtpSent(true);
+        setTimer(60);
+      } else {
+        setError(data.error || "Failed to send OTP");
+      }
+    } catch (err: any) {
+      setError(err.message || "Something went wrong while sending OTP");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
 
   const verifyOtp = async (otpValue: string) => {
     try {
@@ -205,7 +200,9 @@ const confirmOtpInfo = async () => {
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h2 className="text-2xl font-semibold text-green-700">Successfully signed up</h2>
+          <h2 className="text-2xl font-semibold text-green-700">
+            Successfully signed up
+          </h2>
 
           <div className="flex gap-4">
             <button
@@ -261,7 +258,6 @@ const confirmOtpInfo = async () => {
         </div>
       )}
 
-      {/* Signup Form */}
       <motion.div
         initial={{ opacity: 0, y: 40 }}
         animate={{ opacity: 1, y: 0 }}
@@ -335,12 +331,11 @@ const confirmOtpInfo = async () => {
             {fieldErrors.mobile && <p className="text-xs text-red-500 mt-1">{fieldErrors.mobile}</p>}
           </div>
 
-          {/* OTP */}
+          {/* OTP Input & Button */}
           <div className="relative">
             <label className="block text-sm font-bold italic text-blue-900">
               Enter OTP <span className="text-red-600">*</span>
             </label>
-
             <div className="relative flex items-center">
               <input
                 type="text"
@@ -363,7 +358,7 @@ const confirmOtpInfo = async () => {
                 }`}
               />
               {otpVerified && (
-                <span className="absolute right-2 flex items-center justify-center w-4 h-4 bg-green-500 rounded-full">
+                <span className="absolute right-2 flex items-center justify-center w-5 h-5 bg-green-500 rounded-full">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     className="w-3 h-3 text-white"
@@ -377,64 +372,58 @@ const confirmOtpInfo = async () => {
                 </span>
               )}
             </div>
-
             {fieldErrors.otp && <p className="text-xs text-red-500 mt-1">{fieldErrors.otp}</p>}
-          </div>
 
-          {/* OTP Button */}
-          <div className="flex items-center gap-3 mt-1">
-            <button
-              type="button"
-              onClick={sendOtp}
-              disabled={otpLoading || timer > 0}
-              className={`px-4 py-1.5 rounded-md text-white text-sm transition disabled:opacity-50 ${
-                otpSent ? "bg-blue-600 hover:bg-blue-700" : "bg-teal-400 hover:bg-teal-500"
-              }`}
-            >
-              {otpLoading ? "Processing..." : otpSent ? "Resend OTP" : "Send OTP"}
-            </button>
-            {timer > 0 && (
-              <span className="w-8 h-8 rounded-full bg-black text-white flex items-center justify-center font-bold text-sm">
-                {timer}
-              </span>
-            )}
+            <div className="flex items-center gap-3 mt-1">
+              <button
+                type="button"
+                onClick={sendOtp}
+                disabled={otpLoading || timer > 0}
+                className={`px-4 py-1.5 rounded-md text-white text-sm transition disabled:opacity-50 ${
+                  otpSent ? "bg-blue-600 hover:bg-blue-700" : "bg-teal-400 hover:bg-teal-500"
+                }`}
+              >
+                {otpLoading
+                  ? "Processing..."
+                  : otpSent && timer > 0
+                  ? `Resend OTP (${timer}s)`
+                  : otpSent
+                  ? "Resend OTP"
+                  : "Send OTP"}
+              </button>
+            </div>
           </div>
 
           {/* Password */}
-<div className="relative">
-  <label className="block text-sm font-bold italic text-blue-900 mb-1">
-    Password <span className="text-red-600">*</span>
-  </label>
-
-  <div className="relative">
-    <input
-      type={showPassword ? "text" : "password"}
-      placeholder="7-digit password"
-      value={form.password}
-      onChange={(e) => {
-        const value = e.target.value;
-        if (/^\d{0,7}$/.test(value)) setForm({ ...form, password: value });
-      }}
-      className={`w-full pr-10 px-2.5 py-1.5 rounded-md border text-blue-900 text-sm ${
-        fieldErrors.password ? "border-red-500" : "bg-white/90"
-      }`}
-    />
-
-    {/* Eye Icon */}
-    <button
-      type="button"
-      onClick={() => setShowPassword(!showPassword)}
-      className="absolute inset-y-0 right-2 flex items-center text-gray-500 hover:text-gray-700"
-    >
-      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-    </button>
-  </div>
-
-  {fieldErrors.password && (
-    <p className="text-xs text-red-500 mt-1">{fieldErrors.password}</p>
-  )}
-</div>
-
+          <div className="relative">
+            <label className="block text-sm font-bold italic text-blue-900 mb-1">
+              Password <span className="text-red-600">*</span>
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                placeholder="7-digit password"
+                value={form.password}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (/^\d{0,7}$/.test(value)) setForm({ ...form, password: value });
+                }}
+                className={`w-full pr-10 px-2.5 py-1.5 rounded-md border text-blue-900 text-sm ${
+                  fieldErrors.password ? "border-red-500" : "bg-white/90"
+                }`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-2 flex items-center text-gray-500 hover:text-gray-700"
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
+            {fieldErrors.password && (
+              <p className="text-xs text-red-500 mt-1">{fieldErrors.password}</p>
+            )}
+          </div>
 
           {/* Role */}
           <div>

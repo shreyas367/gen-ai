@@ -9,7 +9,7 @@ export async function POST(req: Request) {
     const { identifier, otp } = await req.json();
 
     if (!identifier || !otp) {
-      return NextResponse.json({ error: "Identifier and OTP are required" }, { status: 400 });
+      return NextResponse.json({ success: false, error: "Identifier and OTP are required" }, { status: 400 });
     }
 
     const trimmedIdentifier = identifier.trim();
@@ -18,28 +18,30 @@ export async function POST(req: Request) {
     // Find OTP record
     const otpRecord = await Otp.findOne({ identifier: trimmedIdentifier });
     if (!otpRecord) {
-      return NextResponse.json({ error: "OTP not found or expired" }, { status: 404 });
+      return NextResponse.json({ success: false, error: "OTP not found or expired" }, { status: 404 });
     }
 
     // Check OTP value
     if (otpRecord.otp !== trimmedOtp) {
-      return NextResponse.json({ error: "Invalid OTP" }, { status: 400 });
+      return NextResponse.json({ success: false, error: "Invalid OTP" }, { status: 400 });
     }
 
-    // Check expiry (10 minutes)
-    const OTP_EXPIRY_MS = 10 * 60 * 1000;
-    if (Date.now() - new Date(otpRecord.otpGeneratedAt).getTime() > OTP_EXPIRY_MS) {
-      return NextResponse.json({ error: "OTP expired. Please request a new one." }, { status: 400 });
+    // Check expiry using otpExpiresAt if available
+    const now = Date.now();
+    const expiresAt = otpRecord.otpExpiresAt ? new Date(otpRecord.otpExpiresAt).getTime() : new Date(otpRecord.otpGeneratedAt).getTime() + 10 * 60 * 1000;
+    if (now > expiresAt) {
+      return NextResponse.json({ success: false, error: "OTP expired. Please request a new one." }, { status: 400 });
     }
 
-    // ✅ DO NOT create or update user here
-    // Just return that OTP is valid
+    // ✅ Optionally delete/invalidate OTP after successful verification
+    await Otp.deleteOne({ identifier: trimmedIdentifier });
+
     return NextResponse.json({
       success: true,
       message: "OTP is correct. You can proceed to sign up.",
     });
   } catch (error: any) {
     console.error("Error verifying OTP:", error);
-    return NextResponse.json({ error: "Failed to verify OTP", details: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: "Failed to verify OTP", details: error.message }, { status: 500 });
   }
 }
