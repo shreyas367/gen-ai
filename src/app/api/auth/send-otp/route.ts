@@ -1,16 +1,20 @@
 import { NextResponse } from "next/server";
 import twilio from "twilio";
+import nodemailer from "nodemailer";
 import dbConnect from "@/lib/db";
 import Otp from "@/lib/models/otp";
-import { MailerSend, EmailParams, Sender, Recipient } from "mailersend";
 
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID!,
   process.env.TWILIO_AUTH_TOKEN!
 );
 
-const mailerSend = new MailerSend({
-  apiKey: process.env.MAILERSEND_API_KEY!,
+const mailTransporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  },
 });
 
 export async function POST(req: Request) {
@@ -21,15 +25,22 @@ export async function POST(req: Request) {
     const identifier = mobile?.trim() || email?.trim();
 
     if (!identifier) {
-      return NextResponse.json({ error: "Mobile or email is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Mobile or email is required" },
+        { status: 400 }
+      );
     }
 
     if (mobile && !/^\d{10}$/.test(mobile)) {
-      return NextResponse.json({ error: "Mobile must be 10 digits" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Mobile must be 10 digits" },
+        { status: 400 }
+      );
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpGeneratedAt = new Date();
+    console.log("Generated OTP:", otp, "for", identifier);
 
     // Store OTP in DB
     await Otp.findOneAndUpdate(
@@ -52,28 +63,24 @@ export async function POST(req: Request) {
         smsStatus = "SMS sent";
       } catch (err: any) {
         smsStatus = `SMS failed: ${err.message}`;
-        console.error("Twilio SMS failed:", err.message);
+        console.error("Twilio SMS failed:", err);
       }
     }
 
     // Send Email if email exists
     if (email) {
       try {
-        const sentFrom = new Sender(process.env.MAILERSEND_FROM_EMAIL!, "CraftConnect");
-        const recipients = [new Recipient(email, "User")];
-
-        const emailParams = new EmailParams()
-          .setFrom(sentFrom)
-          .setTo(recipients)
-          .setSubject("Your OTP Code")
-          .setHtml(`<h2>OTP Verification</h2><h1>${otp}</h1><p>Expires in 10 minutes</p>`);
-
-        await mailerSend.email.send(emailParams);
-
+        await mailTransporter.sendMail({
+          from: process.env.GMAIL_FROM, // use GMAIL_FROM here
+          to: email,
+          subject: "Your OTP Code",
+          html: `<h2>OTP Verification</h2><h1>${otp}</h1><p>Expires in 10 minutes</p>`,
+        });
         emailStatus = "Email sent";
+        console.log("OTP email sent to:", email);
       } catch (err: any) {
         emailStatus = `Email failed: ${err.message}`;
-        console.error("MailerSend email failed:", err.message);
+        console.error("Email failed:", err);
       }
     }
 
