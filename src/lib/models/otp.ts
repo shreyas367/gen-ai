@@ -1,7 +1,7 @@
 import mongoose, { Schema, models } from "mongoose";
 
 const otpSchema = new Schema({
-  mobile: {
+  identifier: {
     type: String,
     required: true,
     unique: true,

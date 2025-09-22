@@ -1,22 +1,13 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import dbConnect from "@/lib/db";
 import User from "@/lib/models/User";
 
-interface SignupRequestBody {
-  name: string;
-  email: string;
-  mobile: string;
-  password: string;
-  role: string;
-}
-
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
-    // Connect to DB
+    // ✅ Connect to database
     await dbConnect();
 
-    const body: SignupRequestBody = await req.json();
-    const { name, email, mobile, password, role } = body;
+    const { name, email, mobile, password, role } = await req.json();
 
     // 1. Validate required fields
     if (!name || !email || !mobile || !password || !role) {
@@ -27,7 +18,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Check if mobile number already exists
-    const existingUser = await User.findOne({ mobile });
+    const existingUser = await User.findOne({ mobile }).lean();
     if (existingUser) {
       return NextResponse.json(
         { error: "Mobile number already registered" },
@@ -35,14 +26,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. Create new user
+    // 3. Create new user with raw password
+    //    (Password will be hashed automatically by the pre-save hook in schema)
     const newUser = await User.create({
       name,
       email,
       mobile,
       password,
       role,
-      isVerified: true, // mark verified for now
+      isVerified: true, // ✅ automatically mark as verified for now
     });
 
     // 4. Return success response
@@ -50,7 +42,7 @@ export async function POST(req: NextRequest) {
       success: true,
       message: "Signup successful",
       user: {
-        id: newUser._id,
+        id: newUser._id.toString(),
         name: newUser.name,
         email: newUser.email,
         mobile: newUser.mobile,
@@ -58,13 +50,10 @@ export async function POST(req: NextRequest) {
         isVerified: newUser.isVerified,
       },
     });
-  } catch (error: unknown) {
-    console.error("Signup error:", error);
+  } catch (error) {
+    console.error("Signup error:", (error as Error).message);
     return NextResponse.json(
-      {
-        error: "Signup failed",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
+      { error: "Signup failed" },
       { status: 500 }
     );
   }
