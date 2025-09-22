@@ -1,17 +1,16 @@
 import { NextResponse } from "next/server";
 import twilio from "twilio";
-import nodemailer from "nodemailer";
 import dbConnect from "@/lib/db";
 import Otp from "@/lib/models/otp";
+import { MailerSend, EmailParams, Sender, Recipient } from "mailersend";
 
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID!,
   process.env.TWILIO_AUTH_TOKEN!
 );
 
-const mailTransporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+const mailerSend = new MailerSend({
+  apiKey: process.env.MAILERSEND_API_KEY!,
 });
 
 export async function POST(req: Request) {
@@ -60,16 +59,21 @@ export async function POST(req: Request) {
     // Send Email if email exists
     if (email) {
       try {
-        await mailTransporter.sendMail({
-          from: process.env.EMAIL_FROM,
-          to: email,
-          subject: "Your OTP Code",
-          html: `<h2>OTP Verification</h2><h1>${otp}</h1><p>Expires in 10 minutes</p>`,
-        });
+        const sentFrom = new Sender(process.env.MAILERSEND_FROM_EMAIL!, "CraftConnect");
+        const recipients = [new Recipient(email, "User")];
+
+        const emailParams = new EmailParams()
+          .setFrom(sentFrom)
+          .setTo(recipients)
+          .setSubject("Your OTP Code")
+          .setHtml(`<h2>OTP Verification</h2><h1>${otp}</h1><p>Expires in 10 minutes</p>`);
+
+        await mailerSend.email.send(emailParams);
+
         emailStatus = "Email sent";
       } catch (err: any) {
         emailStatus = `Email failed: ${err.message}`;
-        console.error("Email failed:", err.message);
+        console.error("MailerSend email failed:", err.message);
       }
     }
 
