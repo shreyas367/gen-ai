@@ -4,17 +4,11 @@ import nodemailer from "nodemailer";
 import dbConnect from "@/lib/db";
 import Otp from "@/lib/models/otp";
 
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID as string,
-  process.env.TWILIO_AUTH_TOKEN as string
-);
+const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!);
 
 const mailTransporter = nodemailer.createTransport({
   service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
+  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
 });
 
 export async function POST(req: Request) {
@@ -23,26 +17,18 @@ export async function POST(req: Request) {
     const { mobile, email } = await req.json();
     const identifier = mobile?.trim() || email?.trim();
 
-    if (!identifier) {
-      return NextResponse.json(
-        { error: "Mobile or email is required" },
-        { status: 400 }
-      );
-    }
+    if (!identifier) 
+      return NextResponse.json({ error: "Mobile or email is required" }, { status: 400 });
 
-    if (mobile && !/^\d{10}$/.test(mobile)) {
-      return NextResponse.json(
-        { error: "Mobile must be 10 digits" },
-        { status: 400 }
-      );
-    }
+    if (mobile && !/^\d{10}$/.test(mobile)) 
+      return NextResponse.json({ error: "Mobile must be 10 digits" }, { status: 400 });
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpGeneratedAt = new Date();
 
     console.log(`Generated OTP for ${identifier}: ${otp}`);
 
-    // ⚡ Store OTP only in Otp collection
+    // Store OTP in DB
     await Otp.findOneAndUpdate(
       { identifier },
       { otp, otpGeneratedAt },
@@ -63,7 +49,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // Always send via email if email exists
+    // Send via email if email exists
     if (email) {
       try {
         await mailTransporter.sendMail({
