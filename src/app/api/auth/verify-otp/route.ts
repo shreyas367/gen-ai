@@ -24,16 +24,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
     }
 
-    const now = new Date();
-
-    // Check OTP and expiry
-    if (!user.otp || !user.otpExpiresAt || user.otp !== otp || now > user.otpExpiresAt) {
+    // Use the model method to verify OTP
+    const isOtpValid = await user.verifyOtp(otp);
+    if (!isOtpValid) {
       return NextResponse.json({ success: false, error: "Invalid or expired OTP" }, { status: 400 });
     }
-
-    // OTP is valid, optionally mark verified
-    user.otpVerified = true; // Optional: track verification status
-    await user.save();
 
     return NextResponse.json({ success: true, message: "OTP verified successfully" });
   } catch (error) {
