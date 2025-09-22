@@ -4,11 +4,13 @@ import nodemailer from "nodemailer";
 import dbConnect from "@/lib/db";
 import Otp from "@/lib/models/otp";
 
+// ------------------ Twilio Client ------------------
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID!,
   process.env.TWILIO_AUTH_TOKEN!
 );
 
+// ------------------ Nodemailer Client ------------------
 const mailTransporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -17,7 +19,12 @@ const mailTransporter = nodemailer.createTransport({
   },
 });
 
+// ------------------ API Handler ------------------
 export async function POST(req: Request) {
+  if (req.method !== "POST") {
+    return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+  }
+
   try {
     await dbConnect();
 
@@ -38,6 +45,7 @@ export async function POST(req: Request) {
       );
     }
 
+    // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpGeneratedAt = new Date();
     console.log("Generated OTP:", otp, "for", identifier);
@@ -52,7 +60,7 @@ export async function POST(req: Request) {
     let smsStatus = "";
     let emailStatus = "";
 
-    // Send SMS if mobile exists
+    // ------------------ Send SMS ------------------
     if (mobile) {
       try {
         await twilioClient.messages.create({
@@ -67,11 +75,11 @@ export async function POST(req: Request) {
       }
     }
 
-    // Send Email if email exists
+    // ------------------ Send Email ------------------
     if (email) {
       try {
         await mailTransporter.sendMail({
-          from: process.env.GMAIL_FROM, // use GMAIL_FROM here
+          from: process.env.GMAIL_FROM,
           to: email,
           subject: "Your OTP Code",
           html: `<h2>OTP Verification</h2><h1>${otp}</h1><p>Expires in 10 minutes</p>`,
