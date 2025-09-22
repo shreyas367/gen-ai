@@ -59,19 +59,26 @@ export async function POST(req: Request) {
     let emailStatus = "";
 
     // Send SMS if mobile exists
-    if (mobile) {
-      try {
-        await twilioClient.messages.create({
-          body: `Your OTP is ${otp}`,
-          from: process.env.TWILIO_PHONE_NUMBER,
-          to: `+91${mobile}`,
-        });
-        smsStatus = "SMS sent";
-      } catch (err: any) {
-        smsStatus = `SMS failed: ${err.message}`;
-        console.error("Twilio SMS failed:", err);
-      }
-    }
+   if (mobile) {
+  try {
+    await fetch(`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString('base64')}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        From: process.env.TWILIO_PHONE_NUMBER!,
+        To: `+91${mobile}`,
+        Body: `Your OTP is ${otp}`,
+      }),
+    });
+    smsStatus = "SMS sent";
+  } catch (err: any) {
+    smsStatus = `SMS failed: ${err.message}`;
+    console.error("Twilio SMS failed:", err);
+  }
+}
 
     // Send Email if email exists
     if (email) {
