@@ -1,10 +1,10 @@
-import mongoose, { Document } from "mongoose";
+import mongoose, { Document, Model } from "mongoose";
 import bcrypt from "bcryptjs";
 
+// TypeScript interface for User
 export interface IUser extends Document {
   name?: string;
   email: string;
-  mobile: string;
   password?: string;
   role: "artisan" | "buyer" | "admin";
   otp?: string;
@@ -17,16 +17,15 @@ export interface IUser extends Document {
 
 const userSchema = new mongoose.Schema<IUser>(
   {
-    name: { type: String },
-    email: { type: String },
-    mobile: { type: String, required: true, unique: true },
+    name: { type: String, trim: true },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
 
     // OTP and verification
-    otp: { type: String }, // Stores the OTP
-    otpExpiresAt: { type: Date }, // Expiry time for OTP
-    isVerified: { type: Boolean, default: false }, // Verification status
+    otp: { type: String, trim: true },
+    otpExpiresAt: { type: Date },
+    isVerified: { type: Boolean, default: false },
 
-    // Auth fields
+    // Authentication
     password: { type: String },
 
     role: {
@@ -38,12 +37,11 @@ const userSchema = new mongoose.Schema<IUser>(
   { timestamps: true }
 );
 
-//
-// 1. Hash password before saving
-//
+// ---------------------------
+// Pre-save hook: hash password
+// ---------------------------
 userSchema.pre<IUser>("save", async function (next) {
-  if (!this.isModified("password")) return next(); // Only hash if password is modified or new
-
+  if (!this.isModified("password")) return next();
   try {
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password as string, salt);
@@ -53,37 +51,38 @@ userSchema.pre<IUser>("save", async function (next) {
   }
 });
 
-//
-// 2. Compare entered password with hashed password
-//
+// ---------------------------
+// Compare entered password
+// ---------------------------
 userSchema.methods.comparePassword = async function (
   candidatePassword: string
 ): Promise<boolean> {
-  return bcrypt.compare(candidatePassword, this.password as string);
+  if (!this.password) return false;
+  return bcrypt.compare(candidatePassword, this.password);
 };
 
-//
-// 3. Verify OTP and update isVerified to true
-//
+// ---------------------------
+// Verify OTP
+// ---------------------------
 userSchema.methods.verifyOtp = async function (
   enteredOtp: string
 ): Promise<boolean> {
   if (!this.otp || !this.otpExpiresAt) return false;
 
   const now = new Date();
-
   const isOtpValid = this.otp === enteredOtp && this.otpExpiresAt > now;
+
   if (isOtpValid) {
-    this.isVerified = true; // ✅ Mark user as verified
-    this.otp = undefined; // clear OTP after verification
+    this.isVerified = true;
+    this.otp = undefined;
     this.otpExpiresAt = undefined;
     await this.save();
     return true;
   }
-
   return false;
 };
 
-const User = mongoose.models.User || mongoose.model<IUser>("User", userSchema);
+// Prevent model overwrite issues in serverless deployments
+const User: Model<IUser> = mongoose.models.User || mongoose.model<IUser>("User", userSchema);
 
 export default User;

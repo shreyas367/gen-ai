@@ -1,60 +1,69 @@
+// /api/auth/signup.ts
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/db";
 import User from "@/lib/models/User";
 
+interface SignupRequestBody {
+  name: string;
+  email: string;
+  password: string;
+  role: "artisan" | "buyer" | "admin";
+  otp: string;
+}
+
 export async function POST(req: Request) {
   try {
-    // ✅ Connect to database
     await dbConnect();
 
-    const { name, email, mobile, password, role } = await req.json();
+    const body: SignupRequestBody = await req.json();
+    const { name, email, password, role, otp } = body;
 
-    // 1. Validate required fields
-    if (!name || !email || !mobile || !password || !role) {
-      return NextResponse.json(
-        { error: "All fields are required" },
-        { status: 400 }
-      );
+    if (!name || !email || !password || !role || !otp) {
+      return NextResponse.json({ error: "All fields are required" }, { status: 400 });
     }
 
-    // 2. Check if mobile number already exists
-    const existingUser = await User.findOne({ mobile }).lean();
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+
+    if (existingUser && existingUser.isVerified) {
+      return NextResponse.json({ error: "User already exists" }, { status: 400 });
+    }
+
+    const now = new Date();
+
+    // If user exists but not verified, verify OTP
     if (existingUser) {
-      return NextResponse.json(
-        { error: "Mobile number already registered" },
-        { status: 400 }
-      );
+      if (!existingUser.otp || !existingUser.otpExpiresAt || existingUser.otp !== otp || now > existingUser.otpExpiresAt) {
+        return NextResponse.json({ error: "Invalid or expired OTP" }, { status: 400 });
+      }
+
+      existingUser.name = name;
+      existingUser.password = password;
+      existingUser.role = role;
+      existingUser.isVerified = true;
+      existingUser.otp = undefined;
+      existingUser.otpExpiresAt = undefined;
+
+      await existingUser.save();
+
+      return NextResponse.json({ success: true, message: "Signup successful" });
     }
 
-    // 3. Create new user with raw password
-    //    (Password will be hashed automatically by the pre-save hook in schema)
-    const newUser = await User.create({
+    // If user does not exist yet, assume OTP already verified on frontend
+    const newUser = new User({
       name,
       email,
-      mobile,
       password,
       role,
-      isVerified: true, // ✅ automatically mark as verified for now
+      isVerified: true,
     });
 
-    // 4. Return success response
-    return NextResponse.json({
-      success: true,
-      message: "Signup successful",
-      user: {
-        id: newUser._id.toString(),
-        name: newUser.name,
-        email: newUser.email,
-        mobile: newUser.mobile,
-        role: newUser.role,
-        isVerified: newUser.isVerified,
-      },
-    });
+    await newUser.save();
+
+    return NextResponse.json({ success: true, message: "Signup successful" });
   } catch (error) {
-    console.error("Signup error:", (error as Error).message);
-    return NextResponse.json(
-      { error: "Signup failed" },
-      { status: 500 }
-    );
+    console.error("Signup error:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: "Signup failed", details: message }, { status: 500 });
   }
 }
