@@ -49,52 +49,58 @@ export default function Signup() {
   }, [timer]);
 
   // ========================= OTP HANDLERS =========================
-  const sendOtp = async () => {
-    setShowOtpInfo(true);
-  };
+const sendOtp = async () => {
+  setShowOtpInfo(true);
+};
 
-  const confirmOtpInfo = async () => {
-    setShowOtpInfo(false);
+// Call this when user confirms OTP info modal
+const confirmOtpInfo = async () => {
+  setShowOtpInfo(false);
 
-    if (!form.mobile && !form.email) {
-      setFieldErrors({ mobile: "Please enter mobile or email" });
-      return;
+  // Validation
+  if (!form.mobile && !form.email) {
+    setFieldErrors({ mobile: "Please enter mobile or email" });
+    return;
+  }
+  if (form.mobile && !/^\d{10}$/.test(form.mobile)) {
+    setFieldErrors({ mobile: "Please enter a valid 10-digit mobile number" });
+    return;
+  }
+  if (form.email && !/\S+@\S+\.\S+/.test(form.email)) {
+    setFieldErrors({ email: "Please enter a valid email address" });
+    return;
+  }
+
+  setOtpLoading(true);
+  setError("");
+  setFieldErrors({});
+  setOtpVerified(false);
+
+  try {
+    const res = await fetch("/api/auth/send-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mobile: form.mobile, email: form.email }),
+    });
+
+    // Always parse JSON safely
+    const data = await res.text(); 
+    let jsonData;
+    try { jsonData = JSON.parse(data); } catch { jsonData = {}; }
+
+    if (res.ok) {
+      setOtpSent(true);
+      setTimer(60);
+    } else {
+      setError(jsonData.error || "Failed to send OTP");
     }
-    if (form.mobile && !/^\d{10}$/.test(form.mobile)) {
-      setFieldErrors({ mobile: "Please enter a valid 10-digit mobile number" });
-      return;
-    }
-    if (form.email && !/\S+@\S+\.\S+/.test(form.email)) {
-      setFieldErrors({ email: "Please enter a valid email address" });
-      return;
-    }
+  } catch (err: any) {
+    setError(err.message || "Something went wrong while sending OTP");
+  } finally {
+    setOtpLoading(false);
+  }
+};
 
-    setForm({ ...form, otp: "" });
-    setOtpVerified(false);
-    setFieldErrors({});
-    setError("");
-    setOtpLoading(true);
-
-    try {
-      const res = await fetch("/api/auth/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mobile: form.mobile, email: form.email }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setOtpSent(true);
-        setTimer(60);
-      } else {
-        setError(data.error || "Failed to send OTP");
-      }
-    } catch (err: any) {
-      setError(err.message || "Something went wrong while sending OTP");
-    } finally {
-      setOtpLoading(false);
-    }
-  };
 
   const verifyOtp = async (otpValue: string) => {
     try {
