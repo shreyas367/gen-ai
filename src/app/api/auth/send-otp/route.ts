@@ -1,115 +1,89 @@
 import { NextResponse } from "next/server";
+import twilio from "twilio";
+import nodemailer from "nodemailer";
 import dbConnect from "@/lib/db";
-import User from "@/lib/models/User";
-import { MailerSend, EmailParams, Attachment, EmailSettings, Recipient, Sender } from "mailersend";
-import { Personalization } from "mailersend/lib/modules/Email.module";
+import Otp from "@/lib/models/otp";
 
-interface SendOtpRequestBody {
-  email: string;
-}
+const twilioClient = twilio(
+  process.env.TWILIO_ACCOUNT_SID!,
+  process.env.TWILIO_AUTH_TOKEN!
+);
+
+const mailTransporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+});
 
 export async function POST(req: Request) {
   try {
     await dbConnect();
-    const body: SendOtpRequestBody = await req.json();
-    const email = body.email?.trim();
 
-    if (!email) {
-      return NextResponse.json({ success: false, error: "Email is required" }, { status: 400 });
+    const { mobile, email } = await req.json();
+    const identifier = mobile?.trim() || email?.trim();
+
+    if (!identifier) {
+      return NextResponse.json({ error: "Mobile or email is required" }, { status: 400 });
     }
 
-    // Find or create user
-    let user = await User.findOne({ email });
-    if (!user) {
-      user = new User({ email, isVerified: false });
+    if (mobile && !/^\d{10}$/.test(mobile)) {
+      return NextResponse.json({ error: "Mobile must be 10 digits" }, { status: 400 });
     }
 
-    // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    const otpGeneratedAt = new Date();
 
-    user.otp = otp;
-    user.otpExpiresAt = otpExpiresAt;
-    await user.save();
+    // Store OTP in DB
+    await Otp.findOneAndUpdate(
+      { identifier },
+      { otp, otpGeneratedAt },
+      { upsert: true, new: true }
+    );
 
-    const { MAILERSEND_API_KEY, MAILERSEND_FROM_EMAIL } = process.env;
-    if (!MAILERSEND_API_KEY || !MAILERSEND_FROM_EMAIL) {
-      console.warn("MailerSend env not set. OTP not sent via email.");
-    } else {
-      const mailer = new MailerSend({ apiKey: MAILERSEND_API_KEY });
+    let smsStatus = "";
+    let emailStatus = "";
 
-      const emailParams: EmailParams = {
-        from: { name: "Your App Name", email: MAILERSEND_FROM_EMAIL },
-        to: [{ name: email, email }],
-        subject: "Your OTP Code",
-        html: `<h2>OTP Verification</h2><h1>${otp}</h1><p>Expires in 10 minutes</p>`,
-        text: "",
-        send_at: 0,
-        setFrom: function (from: Sender): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setTo: function (to: Recipient[]): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setCc: function (cc: Recipient[]): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setBcc: function (bcc: Recipient[]): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setReplyTo: function (replyTo: Recipient): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setInReplyTo: function (inReplyTo: string): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setSubject: function (subject: string): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setText: function (text: string): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setHtml: function (html: string): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setSendAt: function (sendAt: number): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setAttachments: function (attachments: Attachment[]): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setTemplateId: function (id: string): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setTags: function (tags: string[]): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setPersonalization: function (personalization: Personalization[]): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setPrecedenceBulk: function (precedenceBulk: boolean): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setSettings: function (settings: EmailSettings): EmailParams {
-          throw new Error("Function not implemented.");
-        },
-        setListUnsubscribe: function (listUnsubscribe: string): EmailParams {
-          throw new Error("Function not implemented.");
-        }
-      };
+    // Send SMS if mobile exists
+    if (mobile) {
+      try {
+        await twilioClient.messages.create({
+          body: `Your OTP is ${otp}`,
+          from: process.env.TWILIO_PHONE_NUMBER,
+          to: `+91${mobile}`,
+        });
+        smsStatus = "SMS sent";
+      } catch (err: any) {
+        smsStatus = `SMS failed: ${err.message}`;
+        console.error("Twilio SMS failed:", err.message);
+      }
+    }
 
-      await mailer.email.send(emailParams);
-      console.log(`OTP sent to ${email} via MailerSend`);
+    // Send Email if email exists
+    if (email) {
+      try {
+        await mailTransporter.sendMail({
+          from: process.env.EMAIL_FROM,
+          to: email,
+          subject: "Your OTP Code",
+          html: `<h2>OTP Verification</h2><h1>${otp}</h1><p>Expires in 10 minutes</p>`,
+        });
+        emailStatus = "Email sent";
+      } catch (err: any) {
+        emailStatus = `Email failed: ${err.message}`;
+        console.error("Email failed:", err.message);
+      }
     }
 
     return NextResponse.json({
       success: true,
-      message: "OTP generated successfully",
-      otpExpiresAt: otpExpiresAt.toISOString(),
+      message: "OTP stored",
+      smsStatus,
+      emailStatus,
     });
-  } catch (error) {
-    console.error("Send OTP error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error occurred";
-    return NextResponse.json({ success: false, error: "Failed to send OTP", details: message }, { status: 500 });
+  } catch (err: any) {
+    console.error("Send OTP error:", err);
+    return NextResponse.json(
+      { error: "Failed to send OTP", details: err.message },
+      { status: 500 }
+    );
   }
 }
