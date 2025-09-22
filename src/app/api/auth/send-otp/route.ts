@@ -4,38 +4,46 @@ import nodemailer from "nodemailer";
 import dbConnect from "@/lib/db";
 import Otp from "@/lib/models/otp";
 
-const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!);
+const twilioClient = twilio(
+  process.env.TWILIO_ACCOUNT_SID!,
+  process.env.TWILIO_AUTH_TOKEN!
+);
 
 const mailTransporter = nodemailer.createTransport({
   service: "gmail",
-  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
 });
 
 export async function POST(req: Request) {
   try {
     await dbConnect();
-    const { mobile, email } = await req.json();
+
+    const body = await req.json();
+    const { mobile, email } = body;
     const identifier = mobile?.trim() || email?.trim();
 
-    if (!identifier) 
+    if (!identifier) {
       return NextResponse.json({ error: "Mobile or email is required" }, { status: 400 });
-
-    if (mobile && !/^\d{10}$/.test(mobile)) 
+    }
+    if (mobile && !/^\d{10}$/.test(mobile)) {
       return NextResponse.json({ error: "Mobile must be 10 digits" }, { status: 400 });
+    }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpGeneratedAt = new Date();
 
     console.log(`Generated OTP for ${identifier}: ${otp}`);
 
-    // Store OTP in DB
     await Otp.findOneAndUpdate(
       { identifier },
       { otp, otpGeneratedAt },
       { upsert: true, new: true }
     );
 
-    // Send via Twilio SMS if mobile
+    // Send SMS
     if (mobile) {
       try {
         await twilioClient.messages.create({
@@ -49,7 +57,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // Send via email if email exists
+    // Send Email
     if (email) {
       try {
         await mailTransporter.sendMail({
@@ -66,12 +74,12 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: "OTP sent and stored in OTP collection",
+      message: "OTP sent successfully",
     });
-  } catch (error: any) {
-    console.error("Send OTP error:", error.message);
+  } catch (err: any) {
+    console.error("Send OTP error:", err);
     return NextResponse.json(
-      { error: "Failed to send OTP", details: error.message },
+      { error: "Failed to send OTP", details: err.message },
       { status: 500 }
     );
   }
