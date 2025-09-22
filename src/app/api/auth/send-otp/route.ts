@@ -4,41 +4,55 @@ import nodemailer from "nodemailer";
 import dbConnect from "@/lib/db";
 import Otp from "@/lib/models/otp";
 
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
-const EMAIL_USER = process.env.EMAIL_USER;
-const EMAIL_PASS = process.env.EMAIL_PASS;
-const EMAIL_FROM = process.env.EMAIL_FROM;
-
-if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
-  throw new Error("Twilio environment variables are not set");
-}
-
-if (!EMAIL_USER || !EMAIL_PASS || !EMAIL_FROM) {
-  throw new Error("Email environment variables are not set");
-}
-
-const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
-
-const mailTransporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: { user: EMAIL_USER, pass: EMAIL_PASS },
-});
-
 export async function POST(req: Request) {
   try {
+    // ✅ Read env variables at runtime
+    const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+    const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+    const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
+    const EMAIL_USER = process.env.EMAIL_USER;
+    const EMAIL_PASS = process.env.EMAIL_PASS;
+    const EMAIL_FROM = process.env.EMAIL_FROM;
+
+    // ✅ Check required env variables
+    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
+      return NextResponse.json(
+        { success: false, error: "Twilio environment variables are not set" },
+        { status: 500 }
+      );
+    }
+
+    if (!EMAIL_USER || !EMAIL_PASS || !EMAIL_FROM) {
+      return NextResponse.json(
+        { success: false, error: "Email environment variables are not set" },
+        { status: 500 }
+      );
+    }
+
+    // ✅ Initialize clients
+    const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    const mailTransporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: EMAIL_USER, pass: EMAIL_PASS },
+    });
+
     await dbConnect();
 
     const { mobile, email } = await req.json();
     const identifier = mobile?.trim() || email?.trim();
 
     if (!identifier) {
-      return NextResponse.json({ success: false, error: "Mobile or email is required" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "Mobile or email is required" },
+        { status: 400 }
+      );
     }
 
     if (mobile && !/^\d{10}$/.test(mobile)) {
-      return NextResponse.json({ success: false, error: "Mobile must be 10 digits" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "Mobile must be 10 digits" },
+        { status: 400 }
+      );
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -47,14 +61,14 @@ export async function POST(req: Request) {
 
     console.log(`Generated OTP for ${identifier}: ${otp}`);
 
-    // Store OTP in DB
+    // ✅ Store OTP in DB
     await Otp.findOneAndUpdate(
       { identifier },
       { otp, otpGeneratedAt, otpExpiresAt },
       { upsert: true, new: true }
     );
 
-    // Send via Twilio SMS
+    // ✅ Send via Twilio SMS
     let smsStatus = null;
     if (mobile) {
       try {
@@ -71,7 +85,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // Send via Email
+    // ✅ Send via Email
     let emailStatus = null;
     if (email) {
       try {
@@ -98,6 +112,9 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.error("Send OTP error:", error.message);
-    return NextResponse.json({ success: false, error: "Failed to send OTP", details: error.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: "Failed to send OTP", details: error.message },
+      { status: 500 }
+    );
   }
 }

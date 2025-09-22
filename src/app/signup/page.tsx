@@ -5,10 +5,34 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Home, Eye, EyeOff } from "lucide-react";
 
+interface SignupForm {
+  name: string;
+  email: string;
+  mobile: string;
+  otp: string;
+  password: string;
+  role: "none" | "artisan" | "buyer" | "admin";
+}
+
+interface FieldErrors {
+  name?: string;
+  email?: string;
+  mobile?: string;
+  otp?: string;
+  password?: string;
+  role?: string;
+}
+
+interface ApiResponse {
+  success: boolean;
+  error?: string;
+  [key: string]: unknown;
+}
+
 export default function Signup() {
   const router = useRouter();
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<SignupForm>({
     name: "",
     email: "",
     mobile: "",
@@ -20,7 +44,7 @@ export default function Signup() {
   const [loading, setLoading] = useState(false);
   const [otpLoading, setOtpLoading] = useState(false);
   const [error, setError] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
   const [timer, setTimer] = useState(0);
@@ -28,7 +52,7 @@ export default function Signup() {
   const [signupSuccess, setSignupSuccess] = useState(false);
   const [showOtpInfo, setShowOtpInfo] = useState(false);
 
-  // ✅ One-time alert
+  // One-time alert
   useEffect(() => {
     if (typeof window !== "undefined") {
       const alreadyShown = sessionStorage.getItem("techAlertShown");
@@ -39,7 +63,7 @@ export default function Signup() {
     }
   }, []);
 
-  // ✅ Timer countdown
+  // Timer countdown
   useEffect(() => {
     let timerId: ReturnType<typeof setTimeout>;
     if (timer > 0) {
@@ -49,9 +73,7 @@ export default function Signup() {
   }, [timer]);
 
   // ========================= OTP HANDLERS =========================
-  const sendOtp = async () => {
-    setShowOtpInfo(true);
-  };
+  const sendOtp = () => setShowOtpInfo(true);
 
   const confirmOtpInfo = async () => {
     setShowOtpInfo(false);
@@ -82,31 +104,36 @@ export default function Signup() {
         body: JSON.stringify({ mobile: form.mobile, email: form.email }),
       });
 
-      const data = await res.json();
+      const data: ApiResponse = await res.json();
 
-      if (res.ok) {
+      if (res.ok && data.success) {
         setOtpSent(true);
+        setForm({ ...form, otp: "" });
         setTimer(60);
       } else {
         setError(data.error || "Failed to send OTP");
       }
-    } catch (err: any) {
-      setError(err.message || "Something went wrong while sending OTP");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong while sending OTP");
     } finally {
       setOtpLoading(false);
     }
   };
 
   const verifyOtp = async (otpValue: string) => {
+    if (!otpValue || otpValue.length < 6) return;
+
+    const identifier = form.mobile || form.email;
+    setOtpVerified(false);
     try {
-      const identifier = form.mobile || form.email;
       const res = await fetch("/api/auth/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier, otp: otpValue }),
       });
 
-      const data = await res.json();
+      const data: ApiResponse = await res.json();
+
       if (res.ok && data.success) {
         setOtpVerified(true);
         setFieldErrors({});
@@ -116,33 +143,28 @@ export default function Signup() {
         setOtpVerified(false);
         setFieldErrors({ otp: data.error || "Invalid OTP" });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setOtpVerified(false);
-      setFieldErrors({
-        otp: err.message || "Something went wrong while verifying OTP",
-      });
+      setFieldErrors({ otp: err instanceof Error ? err.message : "Something went wrong while verifying OTP" });
     }
   };
 
   // ========================= VALIDATION =========================
   const validateFields = () => {
-    const newErrors: Record<string, string> = {};
+    const newErrors: FieldErrors = {};
 
     if (!form.name.trim()) newErrors.name = "Name is required";
-    else if (!/^[A-Za-z\s]+$/.test(form.name))
-      newErrors.name = "Name must contain letters only";
+    else if (!/^[A-Za-z\s]+$/.test(form.name)) newErrors.name = "Name must contain letters only";
 
     if (!form.email.trim()) newErrors.email = "Email is required";
 
-    if (!form.mobile.match(/^\d{10}$/))
-      newErrors.mobile = "Please enter a valid 10-digit mobile number";
+    if (!form.mobile.match(/^\d{10}$/)) newErrors.mobile = "Please enter a valid 10-digit mobile number";
 
     if (!otpSent) newErrors.otp = "Please send OTP first";
     if (!form.otp.trim()) newErrors.otp = "Please enter the OTP";
     if (!otpVerified) newErrors.otp = "OTP not verified";
 
-    if (!/^\d{7}$/.test(form.password))
-      newErrors.password = "Password must be exactly 7 digits";
+    if (!/^\d{7}$/.test(form.password)) newErrors.password = "Password must be exactly 7 digits";
 
     if (form.role === "none") newErrors.role = "Please select a role";
 
@@ -164,17 +186,17 @@ export default function Signup() {
         body: JSON.stringify(form),
       });
 
-      const data = await res.json();
-      setLoading(false);
+      const data: ApiResponse = await res.json();
 
-      if (res.ok) {
+      if (res.ok && data.success) {
         setSignupSuccess(true);
       } else {
         setError(data.error || "Signup failed");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
       setLoading(false);
-      setError(err.message || "Something went wrong");
     }
   };
 
@@ -432,7 +454,7 @@ export default function Signup() {
             </label>
             <select
               value={form.role}
-              onChange={(e) => setForm({ ...form, role: e.target.value })}
+              onChange={(e) => setForm({ ...form, role: e.target.value as "none" | "artisan" | "buyer" | "admin" })}
               className="w-full px-2.5 py-1.5 rounded-md border bg-white/90 text-blue-900 text-sm"
             >
               <option value="none">None</option>
