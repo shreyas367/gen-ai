@@ -15,7 +15,7 @@ import toast from "react-hot-toast";
 
 interface Craft {
   _id: string;
-  artisanId: { _id: string; name: string };
+  artisanId: { _id: string; name: string } | null;
   title: string;
   imageUrl: string;
   price: number;
@@ -37,7 +37,9 @@ export default function BuyerDashboard() {
   const [searchResults, setSearchResults] = useState<Craft[] | null>(null);
 
   const [buyerId, setBuyerId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // Fetch buyerId from localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
       const id = localStorage.getItem("userId");
@@ -45,11 +47,13 @@ export default function BuyerDashboard() {
     }
   }, []);
 
+  // Fetch initial data
   useEffect(() => {
     async function fetchData() {
       try {
         const res = await fetch("/api/crafts");
         const data = await res.json();
+
         setCrafts(data.crafts || []);
 
         if (buyerId) {
@@ -57,11 +61,12 @@ export default function BuyerDashboard() {
             fetch(`/api/favorites?buyerId=${buyerId}`),
             fetch(`/api/cart?buyerId=${buyerId}`),
           ]);
+
           const favData = await favRes.json();
           const cartData = await cartRes.json();
 
-          const favoriteCraftIds = favData
-            .map((f: any) => f.craftId?._id)
+          const favoriteCraftIds = (favData || [])
+            .map((f: any) => f?.craftId?._id)
             .filter(Boolean);
 
           setCrafts((prevCrafts) =>
@@ -71,7 +76,7 @@ export default function BuyerDashboard() {
             }))
           );
 
-          const count = cartData.items?.length || 0;
+          const count = cartData?.items?.length || 0;
           setCartCount(count);
           localStorage.setItem("cartCount", count.toString());
         }
@@ -81,37 +86,48 @@ export default function BuyerDashboard() {
         setLoading(false);
       }
     }
+
     fetchData();
   }, [buyerId]);
 
+  // Navigate to craft detail
   const handleCraftClick = (craft: Craft) => {
     localStorage.setItem("selectedCraft", JSON.stringify(craft));
     window.location.href = "/dashboard/buyer/craft";
   };
 
+  // Toggle favorite (Like/Unlike)
   const toggleLike = async (craftId: string) => {
     if (!buyerId) return toast.error("Please log in as a buyer!");
 
-    // Optimistic UI
+    // Optimistic update
     setCrafts((prev) =>
       prev.map((c) =>
         c._id === craftId
           ? {
               ...c,
               liked: !c.liked,
-              likes: c.liked ? (c.likes || 1) - 1 : (c.likes || 0) + 1,
+              likes: c.liked ? Math.max((c.likes || 1) - 1, 0) : (c.likes || 0) + 1,
             }
           : c
       )
     );
-    if (searchResults)
+
+    if (searchResults) {
       setSearchResults((prev) =>
         prev
           ? prev.map((c) =>
-              c._id === craftId ? { ...c, liked: !c.liked } : c
+              c._id === craftId
+                ? {
+                    ...c,
+                    liked: !c.liked,
+                    likes: c.liked ? Math.max((c.likes || 1) - 1, 0) : (c.likes || 0) + 1,
+                  }
+                : c
             )
           : null
       );
+    }
 
     try {
       const res = await fetch("/api/favorites", {
@@ -119,9 +135,22 @@ export default function BuyerDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ buyerId, craftId }),
       });
+
       const data = await res.json();
       if (!data.success) {
         toast.error("Failed to update favorite");
+        // Revert optimistic update
+        setCrafts((prev) =>
+          prev.map((c) =>
+            c._id === craftId
+              ? {
+                  ...c,
+                  liked: !c.liked,
+                  likes: c.liked ? Math.max((c.likes || 1) - 1, 0) : (c.likes || 0) + 1,
+                }
+              : c
+          )
+        );
       }
     } catch (err) {
       console.error(err);
@@ -129,9 +158,11 @@ export default function BuyerDashboard() {
     }
   };
 
+  // Message artisan
   const messageArtisan = async (artisanId: string, craftTitle: string) => {
     if (!buyerId) return alert("Please log in as a buyer!");
     if (!artisanId) return alert("Invalid artisan ID!");
+
     const content = prompt(`Message to artisan about "${craftTitle}":`);
     if (!content?.trim()) return alert("Message cannot be empty.");
 
@@ -141,6 +172,7 @@ export default function BuyerDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ buyerId, artisanId, content }),
       });
+
       const data = await res.json();
       toast.success(data.success ? "Message sent!" : "Failed to send message.");
     } catch (err) {
@@ -149,20 +181,18 @@ export default function BuyerDashboard() {
     }
   };
 
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
+  // Clear search
   const handleClear = () => {
     setIsRefreshing(true);
-
     setArtistName("");
     setCraftTitle("");
     setPriceRange("");
     setSearchResults(null);
     setSearchError("");
-
     setTimeout(() => setIsRefreshing(false), 800);
   };
 
+  // Add craft to cart
   const addToCart = async (craftId: string) => {
     if (!buyerId) return toast.error("Please log in as a buyer!");
     try {
@@ -171,11 +201,13 @@ export default function BuyerDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ buyerId, productId: craftId, quantity: 1 }),
       });
+
       const data = await res.json();
       if (data.success) {
-        setCartCount((prev) => prev + 1);
+        const newCount = cartCount + 1;
+        setCartCount(newCount);
         toast.success("✅ Added to cart!");
-        localStorage.setItem("cartCount", (cartCount + 1).toString());
+        localStorage.setItem("cartCount", newCount.toString());
       } else {
         toast.error(data.error || "Failed to add to cart.");
       }
@@ -185,6 +217,7 @@ export default function BuyerDashboard() {
     }
   };
 
+  // Search handler
   const handleSearch = () => {
     if (!artistName && !craftTitle && !priceRange) {
       setSearchError("At least one field is required");
@@ -195,13 +228,16 @@ export default function BuyerDashboard() {
 
     let minPrice = 0,
       maxPrice = Infinity;
-    if (priceRange) [minPrice, maxPrice] = priceRange.split("-").map(Number);
+
+    if (priceRange) {
+      const [min, max] = priceRange.split("-").map(Number);
+      minPrice = isNaN(min) ? 0 : min;
+      maxPrice = isNaN(max) ? Infinity : max;
+    }
 
     const results = crafts.filter((craft) => {
       const matchArtist = artistName
-        ? craft.artisanId?.name
-            ?.toLowerCase()
-            .includes(artistName.toLowerCase())
+        ? craft.artisanId?.name?.toLowerCase().includes(artistName.toLowerCase())
         : true;
       const matchTitle = craftTitle
         ? craft.title.toLowerCase().includes(craftTitle.toLowerCase())
@@ -216,6 +252,7 @@ export default function BuyerDashboard() {
     setSearchResults(results);
   };
 
+  // Price formatter
   const formatPrice = (amount: number | string | undefined | null) => {
     if (!amount || isNaN(Number(amount))) return "₹0.00";
     const num = typeof amount === "string" ? parseFloat(amount) : amount;
@@ -225,12 +262,11 @@ export default function BuyerDashboard() {
     });
   };
 
+  // Displayed crafts
   const displayedCrafts =
     searchResults !== null
       ? searchResults
-      : [...crafts]
-          .sort((a, b) => (b.views || 0) - (a.views || 0))
-          .slice(0, 4);
+      : [...crafts].sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 4);
 
   return (
     <div
@@ -336,8 +372,7 @@ export default function BuyerDashboard() {
           transition: transform 0.4s ease, text-shadow 0.4s ease;
         }
         .most-viewed-3d:hover {
-          transform: perspective(500px) rotateX(0deg) rotateY(0deg)
-            translateZ(10px);
+          transform: perspective(500px) rotateX(0deg) rotateY(0deg) translateZ(10px);
           text-shadow: 4px 4px 12px rgba(0, 0, 0, 0.6);
         }
       `}</style>
@@ -359,7 +394,8 @@ export default function BuyerDashboard() {
           </Link>
           <button
             onClick={() => {
-              localStorage.clear();
+              localStorage.removeItem("userId");
+              localStorage.removeItem("cartCount");
               window.location.href = "/login";
             }}
             className="bg-blue-700 text-white px-5 py-2 rounded-lg hover:bg-blue-800 transition shadow-md"
@@ -440,11 +476,12 @@ export default function BuyerDashboard() {
         </div>
       </section>
 
-      {/* MOST VIEWED */}
+      {/* MOST VIEWED CRAFTS Heading */}
       <h2 className="most-viewed-3d text-2xl mb-5 drop-shadow-md text-blue-900">
         [MOST VIEWED CRAFTS]
       </h2>
 
+      {/* Crafts Section */}
       <section>
         {loading ? (
           <div className="flex justify-center py-8">
@@ -473,61 +510,68 @@ export default function BuyerDashboard() {
                   <div>
                     <h3 className="text-lg truncate">{craft.title}</h3>
                     <p className="text-xs mt-2">
-                      by {craft.artisanId?.name || "Unknown Artisan"}
+                      by {craft.artisanId?.name || "Unknown"}
                     </p>
-                    <p className="text-lg font-bold text-black mt-2">
+                    <p className="mt-1 text-base text-green-600">
                       {formatPrice(craft.price)}
-                    </p>
-                    <p className="text-xs text-gray-600 mt-1 flex items-center gap-1">
-                      <Eye className="w-4 h-4 text-gray-400" />{" "}
-                      {craft.views || 0} views
-                      {loadingCraftId === craft._id && (
-                        <Loader2 className="w-4 h-4 animate-spin inline-block ml-1 text-blue-500" />
-                      )}
                     </p>
                   </div>
 
-                  <div className="mt-3 flex justify-between items-center">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleLike(craft._id);
-                      }}
-                      className={`flex items-center gap-1 text-sm transition ${
-                        craft.liked
-                          ? "text-red-600"
-                          : "text-gray-700 hover:text-red-600"
-                      }`}
-                    >
-                      <Heart
-                        className={`w-5 h-5 transition ${
-                          craft.liked ? "fill-red-600 text-red-600" : ""
-                        }`}
-                      />
-                      {craft.likes || 0}
-                    </button>
+                  <div className="flex justify-between items-center mt-4">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleLike(craft._id);
+                        }}
+                        className="p-1 rounded-full hover:bg-gray-100 transition"
+                      >
+                        <Heart
+                          className={`w-6 h-6 ${
+                            craft.liked
+                              ? "text-red-500 fill-red-500"
+                              : "text-gray-400"
+                          }`}
+                        />
+                      </button>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          messageArtisan(
+                            craft.artisanId?._id || "",
+                            craft.title
+                          );
+                        }}
+                        className="p-1 rounded-full hover:bg-gray-100 transition"
+                      >
+                        <MessageCircle className="w-6 h-6 text-gray-600" />
+                      </button>
+                    </div>
 
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        messageArtisan(craft.artisanId._id, craft.title);
+                        setLoadingCraftId(craft._id);
+                        addToCart(craft._id).finally(() =>
+                          setLoadingCraftId(null)
+                        );
                       }}
-                      className="flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                      className="p-2 cart-btn"
                     >
-                      <MessageCircle className="w-4 h-4" />
-                      Message
+                      {loadingCraftId === craft._id ? (
+                        <Loader2 className="w-6 h-6 animate-spin text-white" />
+                      ) : (
+                        <ShoppingCart className="w-6 h-6 text-white" />
+                      )}
                     </button>
+                  </div>
 
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        addToCart(craft._id);
-                      }}
-                      className="flex items-center gap-1 text-sm bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition"
-                    >
-                      <ShoppingCart className="w-4 h-4" />
-                      Add
-                    </button>
+                  <div className="flex items-center justify-between mt-2 text-gray-500 text-xs">
+                    <span className="flex items-center gap-1">
+                      <Eye className="w-4 h-4" /> {craft.views || 0} views
+                    </span>
+                    <span>{craft.likes || 0} likes</span>
                   </div>
                 </div>
               </div>

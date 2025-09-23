@@ -4,57 +4,64 @@ import { useState, useEffect } from "react";
 import { Upload, Image as ImageIcon, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-interface Craft {
-  _id: string;
-  title: string;
-  description?: string;
-  price: number;
-  imageUrl: string;
-  views?: number;
-}
-
-interface MarketingData {
-  suggestions?: string[];
-}
-
-interface CreateCraftResponse {
-  success: boolean;
-  craft: Craft;
-  error?: string;
-}
-
-interface MarketingResponse {
-  suggestions?: string[];
-}
-
 export default function ArtisanDashboard() {
   const [file, setFile] = useState<File | null>(null);
-  const [imageUrl, setImageUrl] = useState(""); 
-  const [title, setTitle] = useState(""); 
+  const [imageUrl, setImageUrl] = useState("");
+  const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [price, setPrice] = useState(""); 
-  const [uploads, setUploads] = useState<Craft[]>([]);
+  const [price, setPrice] = useState("");
   const [loadingAI, setLoadingAI] = useState(false);
   const [loadingUpload, setLoadingUpload] = useState(false);
+  const [uploads, setUploads] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState("");
-  const [marketing, setMarketing] = useState<MarketingData | null>(null);
   const [lang, setLang] = useState("en");
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [marketing, setMarketing] = useState<{ suggestions?: string[] } | null>(null);
+
   const router = useRouter();
 
-  const userId = typeof window !== "undefined" ? localStorage.getItem("userId") : null;
-
+  // Fetch crafts when user is logged in
   useEffect(() => {
-    fetch("/api/crafts")
-      .then((res) => res.json())
-      .then((data: { crafts: Craft[] }) => setUploads(data.crafts || []));
+    const storedUserId = typeof window !== "undefined" ? localStorage.getItem("userId") : null;
+
+    if (!storedUserId) {
+      setLoggedIn(false);
+      setLoading(false);
+      return;
+    }
+
+    setLoggedIn(true);
+
+    const fetchMyCrafts = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(`/api/crafts/my-crafts?artisanId=${storedUserId}`);
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.crafts) {
+          setUploads(data.crafts);
+        } else {
+          setUploads([]);
+        }
+      } catch (err) {
+        console.error("Error fetching crafts:", err);
+        setUploads([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMyCrafts();
   }, []);
 
+  // Auto-hide toast after 3 seconds
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 3000);
     return () => clearTimeout(timer);
   }, [toast]);
 
+  // Format price helper
   const formatPrice = (amount: number | string | undefined | null) => {
     if (!amount) return "₹0.00";
     const num = typeof amount === "string" ? parseFloat(amount) : amount;
@@ -62,13 +69,16 @@ export default function ArtisanDashboard() {
     return num.toLocaleString("en-IN", { style: "currency", currency: "INR" });
   };
 
+  // Generate AI content
   const generateAIContent = async () => {
     if (!file) {
       alert("Please select an image first!");
       return;
     }
+
     setLoadingAI(true);
     try {
+      // 1. Upload image to Cloudinary
       const formData = new FormData();
       formData.append("file", file);
       formData.append("upload_preset", "artisan_preset");
@@ -77,10 +87,16 @@ export default function ArtisanDashboard() {
         method: "POST",
         body: formData,
       });
-      const cloudData: { secure_url: string; error?: { message: string } } = await cloudRes.json();
-      if (!cloudRes.ok) throw new Error(cloudData.error?.message || "Image upload failed");
+
+      const cloudData = await cloudRes.json().catch(() => ({}));
+
+      if (!cloudRes.ok || !cloudData.secure_url) {
+        throw new Error(cloudData.error?.message || "Image upload failed");
+      }
+
       setImageUrl(cloudData.secure_url);
 
+      // 2. Call AI craft generation API
       const craftRes = await fetch("/api/crafts/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -92,13 +108,14 @@ export default function ArtisanDashboard() {
         }),
       });
 
-      const craftData: CreateCraftResponse = await craftRes.json();
-      if (!craftData.craft) throw new Error("AI generation failed");
+      const craftData = await craftRes.json().catch(() => ({}));
+      if (!craftRes.ok || !craftData.craft) throw new Error("AI generation failed");
 
-      if (!title) setTitle(craftData.craft.title);
+      if (!title) setTitle(craftData.craft.title || "");
       setDescription(craftData.craft.description || "");
-      setPrice(craftData.craft.price.toString());
+      setPrice(craftData.craft.price || "");
 
+      // 3. Marketing suggestions
       try {
         const marketingRes = await fetch("/api/crafts/marketing-suggestions", {
           method: "POST",
@@ -109,26 +126,29 @@ export default function ArtisanDashboard() {
           }),
         });
 
-        let marketingData: MarketingData | null = null;
+        const marketingData = await marketingRes.json().catch(() => ({}));
 
-        if (marketingRes.ok) {
-          marketingData = await marketingRes.json() as MarketingResponse;
+        if (marketingRes.ok && marketingData.suggestions) {
+          setMarketing(marketingData);
+        } else {
+          setMarketing(null);
         }
 
-        setMarketing(marketingData ?? null);
         setToast("AI suggestions generated! You can edit before uploading.");
-      } catch (err: unknown) {
+      } catch (err) {
+        console.error("Marketing API error:", err);
         setToast("Marketing AI generation failed");
       }
-    } catch (err: unknown) {
-      if (err instanceof Error) setToast(err.message);
-      else setToast("AI generation failed");
+    } catch (err: any) {
+      console.error(err);
+      setToast(err.message || "AI generation failed");
     } finally {
       setLoadingAI(false);
     }
   };
 
-  const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
+  // Handle manual upload
+  const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     const artisanId = localStorage.getItem("userId");
 
@@ -151,16 +171,18 @@ export default function ArtisanDashboard() {
     try {
       setLoadingUpload(true);
 
+      // Upload image to Cloudinary
       const CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/dqbbieghv/image/upload";
-      const UPLOAD_PRESET = "artisan_preset";
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("upload_preset", UPLOAD_PRESET);
+      formData.append("upload_preset", "artisan_preset");
 
       const res = await fetch(CLOUDINARY_URL, { method: "POST", body: formData });
-      const data: { secure_url: string; error?: { message: string } } = await res.json();
-      if (!res.ok) throw new Error(data.error?.message || "Upload failed");
+      const data = await res.json().catch(() => ({}));
 
+      if (!res.ok || !data.secure_url) throw new Error(data.error?.message || "Upload failed");
+
+      // Save craft to DB
       const saveRes = await fetch("/api/crafts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -173,8 +195,8 @@ export default function ArtisanDashboard() {
         }),
       });
 
-      const saveData: CreateCraftResponse = await saveRes.json();
-      if (!saveData.success) throw new Error(saveData.error || "Failed to save craft");
+      const saveData = await saveRes.json().catch(() => ({}));
+      if (!saveRes.ok || !saveData.success) throw new Error(saveData.error || "Failed to save craft");
 
       setUploads((prev) => [saveData.craft, ...prev]);
       setFile(null);
@@ -182,14 +204,15 @@ export default function ArtisanDashboard() {
       setDescription("");
       setPrice("");
       setToast("Craft uploaded successfully!");
-    } catch (err: unknown) {
-      if (err instanceof Error) setToast(`Upload failed: ${err.message}`);
-      else setToast("Upload failed");
+    } catch (err: any) {
+      console.error(err);
+      setToast(`Upload failed: ${err.message}`);
     } finally {
       setLoadingUpload(false);
     }
   };
 
+  // Update views when a craft is clicked
   const handleCraftClick = async (craftId: string) => {
     try {
       const artisanId = localStorage.getItem("userId");
@@ -204,24 +227,28 @@ export default function ArtisanDashboard() {
         body: JSON.stringify({ buyerId: artisanId }),
       });
 
-      const data: { success: boolean; views?: number } = await res.json();
+      const data = await res.json().catch(() => ({}));
 
-      if (data.success) {
+      if (res.ok && data.success) {
         setUploads((prevUploads) =>
           prevUploads.map((craft) =>
             craft._id === craftId ? { ...craft, views: data.views } : craft
           )
         );
       }
-    } catch (err: unknown) {
+    } catch (err) {
       console.error("Error updating views:", err);
     }
   };
 
+  // Logout and clear session
   const handleLogout = () => {
-    localStorage.clear();
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("userId");
+    }
     router.push("/");
   };
+
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-green-50 to-white p-6 overflow-hidden">
       {/* Header */}
@@ -245,7 +272,7 @@ export default function ArtisanDashboard() {
         </div>
       )}
 
-      {/* Main */}
+      {/* Main Content */}
       <div className="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
         {/* Upload Form */}
         <section className="bg-white rounded-3xl shadow-lg p-6 flex-shrink-0 w-full md:w-1/3 border-t-4 border-green-600 overflow-auto">
@@ -365,14 +392,15 @@ export default function ArtisanDashboard() {
         .gallery-3d {
           display: inline-flex;
           transform: perspective(500px) rotateX(5deg) rotateY(-5deg);
-          text-shadow: 2px 2px 8px rgba(0,0,0,0.4);
+          text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.4);
           transition: transform 0.4s ease, text-shadow 0.4s ease;
         }
         .gallery-3d:hover {
           transform: perspective(500px) rotateX(0deg) rotateY(0deg) translateZ(10px);
-          text-shadow: 4px 4px 12px rgba(0,0,0,0.6);
+          text-shadow: 4px 4px 12px rgba(0, 0, 0, 0.6);
         }
-        input, textarea {
+        input,
+        textarea {
           color: #000;
           border: 1px solid #d1d5db;
           font-family: Arial, sans-serif;
@@ -380,13 +408,17 @@ export default function ArtisanDashboard() {
           font-style: normal;
           transition: border 0.3s ease;
         }
-        input::placeholder, textarea::placeholder {
+        input::placeholder,
+        textarea::placeholder {
           color: #6b7280;
           font-family: Arial, sans-serif;
           font-weight: normal;
           font-style: normal;
         }
-        input:hover, textarea:hover, input:focus, textarea:focus {
+        input:hover,
+        textarea:hover,
+        input:focus,
+        textarea:focus {
           border: 2px solid #22c55e;
           outline: none;
         }
@@ -397,11 +429,27 @@ export default function ArtisanDashboard() {
         }
         .card-3d:hover {
           transform: rotateY(10deg) rotateX(5deg) translateZ(15px);
-          box-shadow: 0 20px 40px rgba(0,0,0,0.35);
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
         }
-        @keyframes toast-in { 0% { opacity:0; transform:translateY(-20px); } 100% { opacity:1; transform:translateY(0); } }
-        .animate-toast { animation: toast-in 0.5s ease-out; }
-        .line-clamp-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+        @keyframes toast-in {
+          0% {
+            opacity: 0;
+            transform: translateY(-20px);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-toast {
+          animation: toast-in 0.5s ease-out;
+        }
+        .line-clamp-2 {
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
         .animate-gradient-text {
           background: linear-gradient(90deg, #f700ff, #0400ff, #4bc522);
           background-size: 200% auto;
@@ -410,7 +458,14 @@ export default function ArtisanDashboard() {
           -webkit-background-clip: text;
           animation: gradient-text 3s linear infinite;
         }
-        @keyframes gradient-text { 0% { background-position:0% 50%; } 50% { background-position:100% 50%; } 100% { background-position:0% 50%; } }
+        @keyframes gradient-text {
+          0% {
+            background-position: 0% center;
+          }
+          100% {
+            background-position: 200% center;
+          }
+        }
       `}</style>
     </div>
   );
