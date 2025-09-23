@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ShoppingBag, Users, Sparkles } from "lucide-react";
 
+
 export default function HomePage() {
   const [language, setLanguage] = useState<"en" | "hi">("en");
   const images = ["/hero-bg.png", "/2.png", "/3.png"]; // slideshow images
