@@ -31,11 +31,14 @@ export async function POST(req: Request) {
     console.log("Generated OTP:", otp, "for", identifier);
 
     // Store OTP in DB
-    await Otp.findOneAndUpdate(
-      { identifier },
-      { otp, otpGeneratedAt },
-      { upsert: true, new: true }
-    );
+  const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
+
+await Otp.findOneAndUpdate(
+  { identifier },
+  { otp, otpGeneratedAt: new Date(), otpExpiresAt },
+  { upsert: true, new: true }
+);
+
 
     let smsStatus = "";
     let emailStatus = "";
