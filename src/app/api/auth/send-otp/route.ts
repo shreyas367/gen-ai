@@ -40,49 +40,56 @@ export async function POST(req: Request) {
     let smsStatus = "";
     let emailStatus = "";
 
-    // ✅ Send SMS using direct fetch (no Twilio SDK)
-    if (mobile) {
-      try {
-        await fetch(
-          `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Basic ${Buffer.from(
-                `${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`
-              ).toString("base64")}`,
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: new URLSearchParams({
-              From: process.env.TWILIO_PHONE_NUMBER!,
-              To: `+91${mobile}`,
-              Body: `Your OTP is ${otp}`,
-            }),
-          }
-        );
-        smsStatus = "SMS sent";
-      } catch (err: any) {
-        smsStatus = `SMS failed: ${err.message}`;
-        console.error("Twilio SMS failed:", err);
+   // ✅ Try SMS (but even if it fails, continue to email)
+if (mobile) {
+  try {
+    const smsRes = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(
+            `${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`
+          ).toString("base64")}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          From: process.env.TWILIO_PHONE_NUMBER!,
+          To: `+91${mobile}`,
+          Body: `Your OTP is ${otp}`,
+        }),
       }
-    }
+    );
 
-    // ✅ Send Email via Gmail
-    if (email) {
-      try {
-        await mailTransporter.sendMail({
-          from: process.env.GMAIL_FROM,
-          to: email,
-          subject: "Your OTP Code",
-          html: `<h2>OTP Verification</h2><h1>${otp}</h1><p>Expires in 10 minutes</p>`,
-        });
-        emailStatus = "Email sent";
-        console.log("OTP email sent to:", email);
-      } catch (err: any) {
-        emailStatus = `Email failed: ${err.message}`;
-        console.error("Email failed:", err);
-      }
+    if (!smsRes.ok) {
+      const errorText = await smsRes.text();
+      smsStatus = `SMS failed: ${errorText}`;
+      console.error("Twilio SMS failed:", errorText);
+    } else {
+      smsStatus = "SMS sent";
     }
+  } catch (err: any) {
+    smsStatus = `SMS failed: ${err.message}`;
+    console.error("Twilio SMS failed:", err);
+  }
+}
+
+// ✅ Always attempt email if email exists
+if (email) {
+  try {
+    await mailTransporter.sendMail({
+      from: process.env.GMAIL_FROM,
+      to: email,
+      subject: "Your OTP Code",
+      html: `<h2>OTP Verification</h2><h1>${otp}</h1><p>Expires in 10 minutes</p>`,
+    });
+    emailStatus = "Email sent";
+    console.log("OTP email sent to:", email);
+  } catch (err: any) {
+    emailStatus = `Email failed: ${err.message}`;
+    console.error("Email failed:", err);
+  }
+}
 
     return NextResponse.json({
       success: true,
