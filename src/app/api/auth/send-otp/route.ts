@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/db";
 import Otp from "@/lib/models/otp";
-import SibApiV3Sdk from "@sendinblue/client";
+import nodemailer from "nodemailer";
 
-// ✅ Configure Brevo (Sendinblue) client
-const brevoClient = new SibApiV3Sdk.TransactionalEmailsApi();
-brevoClient.setApiKey(
-  SibApiV3Sdk.TransactionalEmailsApiApiKeys.apiKey,
-  process.env.BREVO_API_KEY!
-);
+// ✅ Configure Nodemailer Gmail transporter
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD, // app password
+  },
+});
 
 export async function POST(req: Request) {
   try {
@@ -81,23 +83,20 @@ export async function POST(req: Request) {
       }
     }
 
-    // ✅ Attempt email via Brevo
+    // ✅ Attempt email via Nodemailer
     if (email) {
       try {
-        await brevoClient.sendTransacEmail({
-          sender: {
-            email: process.env.BREVO_FROM_EMAIL!,
-            name: process.env.BREVO_FROM_NAME || "YourAppName",
-          },
-          to: [{ email }],
+        await transporter.sendMail({
+          from: process.env.GMAIL_FROM, // e.g. "CraftConnect <your@gmail.com>"
+          to: email,
           subject: "Your OTP Code",
-          htmlContent: `<h2>OTP Verification</h2><h1>${otp}</h1><p>Expires in 10 minutes</p>`,
+          html: `<h2>OTP Verification</h2><h1>${otp}</h1><p>Expires in 10 minutes</p>`,
         });
         emailStatus = "Email sent";
         console.log("OTP email sent to:", email);
       } catch (err: any) {
         emailStatus = `Email failed: ${err.message}`;
-        console.error("Brevo email failed:", err);
+        console.error("Nodemailer email failed:", err);
       }
     }
 
